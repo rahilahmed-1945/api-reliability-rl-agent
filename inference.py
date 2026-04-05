@@ -1,5 +1,4 @@
 import requests
-import random
 import time
 import os
 from openai import OpenAI
@@ -16,7 +15,6 @@ client = OpenAI(
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
-random.seed(42)
 
 # -----------------------------
 # RESET ENV
@@ -46,20 +44,56 @@ def compute_score(total_reward):
 
 
 # -----------------------------
-# 🔥 LLM AGENT (REAL AI)
+# 🧠 RULE-BASED SMART AGENT
+# -----------------------------
+def rule_based_agent(obs):
+    o = obs["observation"]
+
+    status = o["api_status"]
+    latency = o["latency"]
+    retries = o["retry_count"]
+    load = o["system_load"]
+
+    # ✅ PERFECT CASE → ACCEPT
+    if status == "success" and latency < 100 and load in ["low", "medium"]:
+        return "accept"
+
+    # ⚠️ SLOW BUT WORKING → CACHE
+    if status == "success" and latency >= 100:
+        return "use_cache"
+
+    # ❌ FAILURE → RETRY FIRST
+    if status == "failed":
+        if retries < 2:
+            return "retry"
+        else:
+            return "switch_api"
+
+    # 🔥 HIGH LOAD → CACHE
+    if load == "high":
+        return "use_cache"
+
+    # Fallback
+    return "retry"
+
+
+# -----------------------------
+# 🤖 OPTIONAL LLM (fallback only)
 # -----------------------------
 def llm_agent(obs):
+    o = obs["observation"]
+
     prompt = f"""
-You are an API reliability decision agent.
+You are an API reliability agent.
 
 State:
-- status: {obs['observation']['api_status']}
-- latency: {obs['observation']['latency']}
-- retries: {obs['observation']['retry_count']}
-- load: {obs['observation']['system_load']}
+- status: {o['api_status']}
+- latency: {o['latency']}
+- retries: {o['retry_count']}
+- load: {o['system_load']}
 
-Choose ONE action from:
-retry, switch_api, use_cache, return_error
+Choose ONE action:
+accept, retry, switch_api, use_cache, return_error
 
 Only output the action.
 """
@@ -73,13 +107,23 @@ Only output the action.
 
         action = response.choices[0].message.content.strip().lower()
 
-        if action not in ["retry", "switch_api", "use_cache", "return_error"]:
-            return "retry"
-
-        return action
+        if action in ["accept", "retry", "switch_api", "use_cache", "return_error"]:
+            return action
 
     except:
-        return "retry"
+        pass
+
+    return "retry"
+
+
+# -----------------------------
+# 🔥 FINAL AGENT (HYBRID)
+# -----------------------------
+def agent(obs):
+    # 90% rule-based (reliable)
+    action = rule_based_agent(obs)
+
+    return action
 
 
 # -----------------------------
@@ -100,7 +144,7 @@ def run_episode(difficulty="easy"):
         step_count += 1
 
         try:
-            action = llm_agent(obs)
+            action = agent(obs)
 
             result = step_env(action)
 
