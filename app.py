@@ -53,14 +53,14 @@ def compute_score(reward):
 
 
 # -----------------------------
-# 🤖 AI EXPLANATION (FINAL DYNAMIC VERSION)
+# 🤖 AI EXPLANATION (FINAL FIXED)
 # -----------------------------
 def explain_action(obs, action):
     try:
         prompt = f"""
-You are an expert backend engineer analyzing an API reliability system.
+You are an expert backend engineer.
 
-This is NOT a generic explanation task. Evaluate THIS specific step dynamically.
+Evaluate THIS API decision.
 
 State:
 - API status: {obs['api_status']}
@@ -70,22 +70,24 @@ State:
 
 Action: {action}
 
-Instructions:
-- Decide if action was GOOD or BAD
-- Use actual numbers (latency, retries)
-- Each explanation MUST vary slightly in wording
-- Avoid repeating phrases
-- Be specific to this case
+STRICT RULES:
+- Output ONLY ONE line
+- Start with either GOOD or BAD
+- Then a single short explanation
+- Do NOT give multiple answers
+- Do NOT continue after the explanation
+- Use actual values in reasoning
 
-Format:
-GOOD or BAD - explanation (1–2 lines)
+Format strictly:
+GOOD or BAD - explanation
 """
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=60,
-            temperature=0.7   # 🔥 enables variation
+            max_tokens=25,        # 🔥 prevents overflow
+            temperature=0.6,      # 🔥 controlled variation
+            stop=["\n"]           # 🔥 stops extra output
         )
 
         return response.choices[0].message.content.strip()
