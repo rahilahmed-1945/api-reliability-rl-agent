@@ -22,7 +22,7 @@ ACTIONS = ["accept", "retry", "switch_api", "use_cache", "return_error"]
 Q = {}
 alpha = 0.1
 gamma = 0.9
-epsilon = 0.2
+epsilon = 0.4
 
 
 # -----------------------------
@@ -137,7 +137,7 @@ Explain in ONE short line.
 # -----------------------------
 def run_step(difficulty, _):
 
-    EPISODES = 40  # safe training size
+    EPISODES = 10  # safe training size
 
     last_obs = None
     last_reward = 0
