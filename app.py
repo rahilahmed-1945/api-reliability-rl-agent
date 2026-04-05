@@ -133,39 +133,55 @@ Explain in ONE short line.
 
 
 # -----------------------------
-# RL EPISODE RUN
+# RL TRAINING + RUN
 # -----------------------------
 def run_step(difficulty, _):
 
-    obs = reset_env(difficulty)["observation"]
-    done = False
+    EPISODES = 40  # safe training size
 
-    while not done:
-        action = agent(obs)
+    last_obs = None
+    last_reward = 0
+    last_action = None
 
-        res = step_env(action)
-        next_obs = res["observation"]
-        reward = res["reward"]
+    for episode in range(EPISODES):
 
-        update_q(obs, action, reward, next_obs)
+        obs = reset_env(difficulty)["observation"]
+        done = False
 
-        obs = next_obs
-        done = res["done"]
+        while not done:
+            action = agent(obs)
 
-    score = compute_score(reward)
-    label = get_label(reward)
-    explanation = explain_action(obs, action, label)
+            res = step_env(action)
+            next_obs = res["observation"]
+            reward = res["reward"]
+
+            update_q(obs, action, reward, next_obs)
+
+            obs = next_obs
+            done = res["done"]
+
+            last_obs = obs
+            last_reward = reward
+            last_action = action
+
+    # learning growth
+    states_learned = len(Q)
+
+    score = compute_score(last_reward)
+    label = get_label(last_reward)
+    explanation = explain_action(last_obs, last_action, label)
 
     return (
-        obs["api_status"],
-        round(obs["latency"], 2),
-        obs["retry_count"],
-        round(obs["api_cost"], 3),
-        obs["system_load"],
-        round(reward, 2),
+        last_obs["api_status"],
+        round(last_obs["latency"], 2),
+        last_obs["retry_count"],
+        round(last_obs["api_cost"], 3),
+        last_obs["system_load"],
+        round(last_reward, 2),
         score,
         explanation,
-        done
+        True,
+        states_learned
     )
 
 
@@ -187,7 +203,7 @@ with gr.Blocks() as demo:
     with gr.Row():
         difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy", label="Difficulty")
 
-    run_btn = gr.Button("Run RL Episode")
+    run_btn = gr.Button("Run RL Training")
     reset_btn = gr.Button("Reset Environment")
 
     status_msg = gr.Textbox(label="Status")
@@ -208,6 +224,8 @@ with gr.Blocks() as demo:
     explanation = gr.Textbox(label="🤖 AI Explanation")
     done = gr.Checkbox(label="Done")
 
+    states_learned = gr.Number(label="States Learned (Q-table size)")
+
     run_btn.click(
         run_step,
         [difficulty, gr.Textbox(visible=False)],
@@ -220,7 +238,8 @@ with gr.Blocks() as demo:
             reward,
             score,
             explanation,
-            done
+            done,
+            states_learned
         ]
     )
 
