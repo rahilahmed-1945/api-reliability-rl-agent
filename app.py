@@ -53,38 +53,39 @@ def compute_score(reward):
 
 
 # -----------------------------
-# 🤖 AI EXPLANATION (IMPROVED)
+# 🤖 AI EXPLANATION (FINAL DYNAMIC VERSION)
 # -----------------------------
 def explain_action(obs, action):
     try:
         prompt = f"""
-You are an expert backend engineer evaluating API reliability decisions.
+You are an expert backend engineer analyzing an API reliability system.
 
-Context:
-This system simulates API failures, latency, retries, and cost trade-offs.
+This is NOT a generic explanation task. Evaluate THIS specific step dynamically.
 
-Current state:
+State:
 - API status: {obs['api_status']}
 - Latency: {obs['latency']} ms
 - Retry count: {obs['retry_count']}
 - System load: {obs['system_load']}
 
-Action taken: {action}
+Action: {action}
 
-Evaluate whether this action was GOOD or BAD based on:
-- latency (lower is better)
-- success vs failure
-- retry count (lower is better)
-- cost efficiency
+Instructions:
+- Decide if action was GOOD or BAD
+- Use actual numbers (latency, retries)
+- Each explanation MUST vary slightly in wording
+- Avoid repeating phrases
+- Be specific to this case
 
-Give a short 1–2 line explanation specific to this scenario.
-Do NOT give generic explanations.
+Format:
+GOOD or BAD - explanation (1–2 lines)
 """
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=50
+            max_tokens=60,
+            temperature=0.7   # 🔥 enables variation
         )
 
         return response.choices[0].message.content.strip()
