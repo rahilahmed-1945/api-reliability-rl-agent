@@ -53,14 +53,21 @@ def compute_score(reward):
 
 
 # -----------------------------
-# 🤖 AI EXPLANATION (FINAL BALANCED)
+# ✅ SYSTEM DECIDES GOOD/BAD
 # -----------------------------
-def explain_action(obs, action):
+def get_label(reward):
+    return "GOOD" if reward >= 8 else "BAD"
+
+
+# -----------------------------
+# 🤖 AI EXPLAINS (NOT DECIDES)
+# -----------------------------
+def explain_action(obs, action, label):
     try:
         prompt = f"""
 You are an expert backend engineer.
 
-Evaluate THIS API decision.
+Decision: {label}
 
 State:
 - API status: {obs['api_status']}
@@ -68,31 +75,26 @@ State:
 - Retry count: {obs['retry_count']}
 - System load: {obs['system_load']}
 
-Action: {action}
+Action taken: {action}
 
-Rules:
-- Output ONLY ONE line
-- Start with GOOD or BAD
-- Include at least TWO factors (latency, retries, success/failure, cost)
-- Be concise but meaningful
-- Do NOT repeat or give multiple answers
-
-Format strictly:
-GOOD or BAD - explanation
+Explain WHY this decision is {label}.
+Use at least two factors (latency, retries, load, status).
+Output ONE line only.
 """
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=40,       # balanced explanation length
-            temperature=0.6,     # controlled variation
-            stop=["\n"]          # prevents extra output
+            max_tokens=40,
+            temperature=0.5,
+            stop=["\n"]
         )
 
-        return response.choices[0].message.content.strip()
+        explanation = response.choices[0].message.content.strip()
+        return f"{label} - {explanation}"
 
     except Exception:
-        return "AI explanation unavailable"
+        return f"{label} - Explanation unavailable"
 
 
 # -----------------------------
@@ -110,7 +112,8 @@ def run_step(difficulty, action):
     reward = step_response["reward"]
 
     score = compute_score(reward)
-    explanation = explain_action(obs, action)
+    label = get_label(reward)
+    explanation = explain_action(obs, action, label)
 
     return (
         obs["api_status"],
@@ -143,8 +146,8 @@ with gr.Blocks() as demo:
     with gr.Row():
         difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy", label="Difficulty")
         action = gr.Dropdown(
-            ["retry", "switch_api", "use_cache", "return_error"],
-            value="retry",
+            ["accept", "retry", "switch_api", "use_cache", "return_error"],
+            value="accept",
             label="Action"
         )
 
