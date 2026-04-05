@@ -6,7 +6,7 @@ from openai import OpenAI
 # -----------------------------
 # CONFIG
 # -----------------------------
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("BASE_URL", "http://0.0.0.0:8000")
 
 client = OpenAI(
     api_key=os.getenv("HF_TOKEN", "dummy"),
