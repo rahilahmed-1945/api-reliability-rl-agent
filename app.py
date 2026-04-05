@@ -53,7 +53,7 @@ def compute_score(reward):
 
 
 # -----------------------------
-# 🤖 AI EXPLANATION (FINAL FIXED)
+# 🤖 AI EXPLANATION (FINAL BALANCED)
 # -----------------------------
 def explain_action(obs, action):
     try:
@@ -70,13 +70,12 @@ State:
 
 Action: {action}
 
-STRICT RULES:
+Rules:
 - Output ONLY ONE line
-- Start with either GOOD or BAD
-- Then a single short explanation
-- Do NOT give multiple answers
-- Do NOT continue after the explanation
-- Use actual values in reasoning
+- Start with GOOD or BAD
+- Include at least TWO factors (latency, retries, success/failure, cost)
+- Be concise but meaningful
+- Do NOT repeat or give multiple answers
 
 Format strictly:
 GOOD or BAD - explanation
@@ -85,9 +84,9 @@ GOOD or BAD - explanation
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=25,        # 🔥 prevents overflow
-            temperature=0.6,      # 🔥 controlled variation
-            stop=["\n"]           # 🔥 stops extra output
+            max_tokens=40,       # balanced explanation length
+            temperature=0.6,     # controlled variation
+            stop=["\n"]          # prevents extra output
         )
 
         return response.choices[0].message.content.strip()
