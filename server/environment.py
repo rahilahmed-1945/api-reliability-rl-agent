@@ -17,7 +17,8 @@ class APIEnvironment(Environment):
         self.last_action = None
 
     def reset(self, seed=None, episode_id=None, difficulty="easy", **kwargs):
-        random.seed(seed)
+        if seed is not None:
+            random.seed(seed)
 
         self.difficulty = difficulty
 
