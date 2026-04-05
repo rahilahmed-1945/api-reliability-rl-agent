@@ -20,17 +20,17 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 # RESET ENV
 # -----------------------------
 def reset_env(difficulty):
-    res = requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty})
-    return res.json()
+    return requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty}).json()
 
 
 # -----------------------------
 # STEP ENV
 # -----------------------------
 def step_env(action):
-    payload = {"action": {"action": action}}
-    res = requests.post(f"{BASE_URL}/step", json=payload)
-    return res.json()
+    return requests.post(
+        f"{BASE_URL}/step",
+        json={"action": {"action": action}}
+    ).json()
 
 
 # -----------------------------
@@ -46,14 +46,14 @@ def compute_score(reward):
 
 
 # -----------------------------
-# LABEL (FIXED THRESHOLD)
+# LABEL (FIXED)
 # -----------------------------
 def get_label(reward):
-    return "GOOD" if reward >= 5 else "BAD"
+    return "GOOD" if reward >= 4 else "BAD"
 
 
 # -----------------------------
-# AI EXPLANATION
+# AI EXPLANATION (FIXED LOGIC)
 # -----------------------------
 def explain_action(obs, action, label):
     try:
@@ -66,37 +66,40 @@ State:
 - load: {obs['system_load']}
 - retries: {obs['retry_count']}
 
-Note:
-- latency < 150 ms is GOOD
-- success is GOOD
+Rules:
+- latency < 100 ms = GOOD
+- if status = success → DO NOT retry/switch/cache
+- use_cache only when latency is high OR load is high
+- retry only when failed
+- switching API without failure is BAD
 
-Explain briefly.
+Explain in ONE short line why this decision is {label}.
 """
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=30,
-            temperature=0.5
+            max_tokens=35,
+            temperature=0.4
         )
 
         return f"{label} - {response.choices[0].message.content.strip()}"
 
-    except Exception:
+    except:
         return f"{label} - Explanation unavailable"
 
 
 # -----------------------------
-# MAIN FUNCTION (🔥 FIXED)
+# MAIN FUNCTION (CORRECT)
 # -----------------------------
 def run_step(difficulty, action):
-    # 🔥 ALWAYS RESET → ensures new random environment
+    # always new environment → ensures randomness
     reset_env(difficulty)
 
-    step_response = step_env(action)
+    res = step_env(action)
 
-    obs = step_response["observation"]
-    reward = step_response["reward"]
+    obs = res["observation"]
+    reward = res["reward"]
 
     score = compute_score(reward)
     label = get_label(reward)
@@ -111,7 +114,7 @@ def run_step(difficulty, action):
         round(reward, 2),
         score,
         explanation,
-        step_response["done"]
+        res["done"]
     )
 
 
@@ -160,9 +163,9 @@ with gr.Blocks() as demo:
     done = gr.Checkbox(label="Done")
 
     run_btn.click(
-        fn=run_step,
-        inputs=[difficulty, action],
-        outputs=[
+        run_step,
+        [difficulty, action],
+        [
             api_status,
             latency,
             retry_count,
@@ -175,10 +178,6 @@ with gr.Blocks() as demo:
         ]
     )
 
-    reset_btn.click(
-        fn=manual_reset,
-        inputs=[difficulty],
-        outputs=[status_msg]
-    )
+    reset_btn.click(manual_reset, [difficulty], [status_msg])
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
