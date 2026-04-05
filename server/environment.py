@@ -99,6 +99,10 @@ class APIEnvironment(Environment):
             self.latency = 0
             self.cost = 0.0
 
+        else:
+            # fallback safety
+            self.current_status, self.latency, self.cost = self.simulate_api()
+
         # ---------------- REWARD ----------------
         reward = 0
 
@@ -138,3 +142,14 @@ class APIEnvironment(Environment):
             system_load=self.system_load,
             message=f"Action taken: {action.action}"
         )
+
+    # -----------------------------
+    # ✅ REQUIRED FIX (VERY IMPORTANT)
+    # -----------------------------
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        self._state = value
