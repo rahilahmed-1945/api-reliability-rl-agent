@@ -1,3 +1,13 @@
+---
+title: API Reliability RL Environment
+emoji: 🚀
+colorFrom: purple
+colorTo: blue
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
 # 🚀 Cost-Aware API Reliability RL Environment
 
 ## 🧠 Overview
@@ -43,42 +53,45 @@ Enable agents to learn optimal strategies for handling unreliable APIs using the
 
 ---
 
-## 🏆 Reward Function
+## 🧠 Environment Dynamics
 
-The reward function models real-world trade-offs:
+* API A → cheaper but less reliable
+* API B → more reliable but higher cost
+* Failures persist across steps (**temporal memory**)
+* Repeated retries increase failure probability (**cascading effect**)
+* Actions influence future system behavior
+
+---
+
+## 🏆 Reward Function
 
 * +10 → successful response
 * −0.01 × latency
-* −2 × retry_count
+* −scaled retry penalty (non-linear with retries)
 * −3 × api_cost
 * −8 → failure
-* −2 → repeated same action penalty
-
-👉 Encourages:
-
-* efficient responses
-* minimal retries
-* cost optimization
+* −1 → cache overuse penalty
+* −2 → repeated action penalty
 
 ---
 
 ## 🧪 Tasks (Difficulty Levels)
 
-| Task   | Description                         |
-| ------ | ----------------------------------- |
-| Easy   | Low failure probability (~30%)      |
-| Medium | Moderate failures (~50%)            |
-| Hard   | High failure + system stress (~70%) |
+| Task   | Description                      |
+| ------ | -------------------------------- |
+| Easy   | Low failure probability (~30%)   |
+| Medium | Moderate failures (~50%)         |
+| Hard   | High failure + cascading effects |
 
 ---
 
 ## 🤖 Baseline Agents
 
-| Agent     | Behavior                   |
-| --------- | -------------------------- |
-| Random    | Random actions             |
-| Bad       | Always retries             |
-| Heuristic | Smart rule-based decisions |
+| Agent     | Behavior             |
+| --------- | -------------------- |
+| Random    | Random actions       |
+| Bad       | Always retries       |
+| Heuristic | Rule-based decisions |
 
 ---
 
@@ -92,18 +105,8 @@ The reward function models real-world trade-offs:
 
 ## 🧪 Inference Script
 
-Run baseline evaluation:
-
 ```bash
 python inference.py
-```
-
-Outputs structured logs:
-
-```
-[START] ...
-[STEP] ...
-[END] ...
 ```
 
 ---
@@ -112,21 +115,21 @@ Outputs structured logs:
 
 ### Reset Environment
 
-```
 POST /reset
-```
 
 ### Take Action
 
-```
 POST /step
-```
 
 ### Get State
 
-```
 GET /state
-```
+
+---
+
+## 🤖 AI Integration
+
+The system uses an OpenAI-compatible API to generate **real-time explanations** for decisions, improving interpretability.
 
 ---
 
@@ -143,6 +146,7 @@ GET /state
 * Gradio
 * Docker
 * Hugging Face Spaces
+* OpenAI-compatible API
 
 ---
 
@@ -178,16 +182,15 @@ docker run -p 8000:8000 api-env
 ## 🎯 Key Highlights
 
 * Real-world API reliability simulation
-* Multi-objective reward design
-* Deterministic evaluation via scoring
+* State-aware stochastic environment
+* Multi-objective reward optimization
+* LLM-based interpretability
 * Fully deployable RL environment
 
 ---
 
 ## 👥 Team
 
-* PALETI SAI TARUN - saitarunpaleti@gmail.com 
-
-* Rahil Ahmed - rahilahmed1305@gmail.com
-
-* Ganesh Rayapati - nehapavanr@gmail.com
+* PALETI SAI TARUN — [saitarunpaleti@gmail.com](mailto:saitarunpaleti@gmail.com)
+* Rahil Ahmed — [rahilahmed1305@gmail.com](mailto:rahilahmed1305@gmail.com)
+* Ganesh Rayapati — [nehapavanr@gmail.com](mailto:nehapavanr@gmail.com)
