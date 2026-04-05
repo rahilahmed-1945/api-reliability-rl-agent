@@ -8,7 +8,7 @@ from models import APIAction, APIObservation, APIState
 class APIEnvironment(Environment):
 
     def __init__(self):
-        self.state = APIState()
+        self._state = APIState()
         self.current_status = "success"
         self.latency = 100
         self.cost = 0.01
@@ -17,12 +17,12 @@ class APIEnvironment(Environment):
         self.last_action = None
 
     def reset(self, seed=None, episode_id=None, difficulty="easy", **kwargs):
-        if seed is not None:
-            random.seed(seed)
+        # ❌ DO NOT FIX RANDOMNESS
+        # Remove seeding completely for real randomness
 
         self.difficulty = difficulty
 
-        self.state = APIState(
+        self._state = APIState(
             episode_id=episode_id or str(uuid.uuid4()),
             step_count=0,
             current_api="A",
@@ -30,15 +30,22 @@ class APIEnvironment(Environment):
             done=False
         )
 
+        # 🔥 RANDOMIZE EVERY RESET
         self.system_load = random.choice(["low", "medium", "high"])
-        self.current_status, self.latency, self.cost = self.simulate_api()
+
+        # 🔥 simulate AFTER setting load
+        status, latency, cost = self.simulate_api()
+
+        self.current_status = status
+        self.latency = latency
+        self.cost = cost
 
         return APIObservation(
             done=False,
             reward=None,
             api_status=self.current_status,
             latency=self.latency,
-            retry_count=self.state.retry_count,
+            retry_count=self._state.retry_count,
             api_cost=self.cost,
             system_load=self.system_load,
             message="Environment reset"
@@ -55,12 +62,13 @@ class APIEnvironment(Environment):
         if self.system_load == "high":
             fail_prob += 0.1
 
-        if self.state.current_api == "A":
+        if self._state.current_api == "A":
             fail_prob += 0.1
         else:
             fail_prob -= 0.1
 
         fail_prob = max(0.0, min(1.0, fail_prob))
+
         rand = random.random()
 
         if rand < fail_prob:
@@ -71,7 +79,7 @@ class APIEnvironment(Environment):
             return "success", random.uniform(50, 200), random.uniform(0.01, 0.1)
 
     def step(self, action: APIAction, timeout_s=None, **kwargs):
-        self.state.step_count += 1
+        self._state.step_count += 1
 
         prev_status = self.current_status
         prev_latency = self.latency
@@ -81,13 +89,13 @@ class APIEnvironment(Environment):
             pass
 
         elif action.action == "retry":
-            self.state.retry_count += 1
+            self._state.retry_count += 1
             self.current_status, self.latency, self.cost = self.simulate_api()
 
         elif action.action == "switch_api":
-            self.state.current_api = "B" if self.state.current_api == "A" else "A"
+            self._state.current_api = "B" if self._state.current_api == "A" else "A"
             self.system_load = "medium"
-            self.state.retry_count = max(0, self.state.retry_count - 1)
+            self._state.retry_count = max(0, self._state.retry_count - 1)
             self.current_status, self.latency, self.cost = self.simulate_api()
 
         elif action.action == "use_cache":
@@ -101,7 +109,6 @@ class APIEnvironment(Environment):
             self.cost = 0.0
 
         else:
-            # fallback safety
             self.current_status, self.latency, self.cost = self.simulate_api()
 
         # ---------------- REWARD ----------------
@@ -114,10 +121,10 @@ class APIEnvironment(Environment):
 
         reward -= 0.02 * self.latency
         reward -= 5 * self.cost
-        reward -= 2 * self.state.retry_count
+        reward -= 2 * self._state.retry_count
 
         # 🔥 Decision quality
-        if prev_status == "success" and prev_latency < 100:
+        if prev_status == "success" and prev_latency < 120:
             reward += 5 if action.action == "accept" else -5
 
         if prev_status == "failed":
@@ -131,21 +138,21 @@ class APIEnvironment(Environment):
 
         self.last_action = action.action
 
-        done = self.state.step_count >= 5 or self.state.retry_count >= 5
+        done = self._state.step_count >= 5 or self._state.retry_count >= 5
 
         return APIObservation(
             done=done,
             reward=reward,
             api_status=self.current_status,
             latency=self.latency,
-            retry_count=self.state.retry_count,
+            retry_count=self._state.retry_count,
             api_cost=self.cost,
             system_load=self.system_load,
             message=f"Action taken: {action.action}"
         )
 
     # -----------------------------
-    # ✅ REQUIRED FIX (VERY IMPORTANT)
+    # ✅ REQUIRED FOR OPENENV
     # -----------------------------
     @property
     def state(self):
