@@ -46,6 +46,9 @@ class APIEnvironment(Environment):
         )
 
     def simulate_api(self):
+        # -----------------------------
+        # BASE FAILURE PROBABILITY
+        # -----------------------------
         if self.difficulty == "easy":
             fail_prob = 0.3
         elif self.difficulty == "medium":
@@ -53,8 +56,36 @@ class APIEnvironment(Environment):
         else:
             fail_prob = 0.7
 
+        # -----------------------------
+        # SYSTEM LOAD EFFECT
+        # -----------------------------
         if self.system_load == "high":
             fail_prob += 0.1
+
+        # -----------------------------
+        # API-SPECIFIC BEHAVIOR
+        # -----------------------------
+        if self.state.current_api == "A":
+            fail_prob += 0.1   # less reliable
+        elif self.state.current_api == "B":
+            fail_prob -= 0.1   # more reliable
+
+        # -----------------------------
+        # 🔥 TEMPORAL MEMORY
+        # -----------------------------
+        if self.current_status == "failed":
+            fail_prob += 0.1
+
+        # -----------------------------
+        # 🔥 CASCADING FAILURES
+        # -----------------------------
+        if self.state.retry_count > 2:
+            fail_prob += 0.15
+
+        # -----------------------------
+        # CLAMP
+        # -----------------------------
+        fail_prob = max(0.0, min(1.0, fail_prob))
 
         rand = random.random()
 
@@ -75,31 +106,41 @@ class APIEnvironment(Environment):
     def step(self, action: APIAction, timeout_s=None, **kwargs):
         self.state.step_count += 1
 
+        # -----------------------------
         # ACTION EFFECTS
+        # -----------------------------
         if action.action == "retry":
             self.state.retry_count += 1
+            self.current_status, self.latency, self.cost = self.simulate_api()
 
         elif action.action == "switch_api":
             self.state.current_api = "B" if self.state.current_api == "A" else "A"
 
-        elif action.action == "use_cache":
-            if random.random() < 0.7:
-                self.current_status = "success"
-            else:
-                self.current_status = "failed"
+            # 🔥 switching consequence
+            self.system_load = "medium"
+            self.state.retry_count = max(0, self.state.retry_count - 1)
 
+            self.current_status, self.latency, self.cost = self.simulate_api()
+
+        elif action.action == "use_cache":
+            self.current_status = "success" if random.random() < 0.8 else "failed"
             self.latency = random.uniform(10, 50)
             self.cost = 0.0
 
         elif action.action == "return_error":
             self.current_status = "failed"
+            self.latency = 0
+            self.cost = 0.0
 
-        # SIMULATION
-        self.current_status, self.latency, self.cost = self.simulate_api()
+        else:
+            self.current_status, self.latency, self.cost = self.simulate_api()
 
-        # REWARD
+        # -----------------------------
+        # REWARD FUNCTION
+        # -----------------------------
         reward = 0
 
+        # discourage repeating same action
         if self.last_action == action.action:
             reward -= 2
         self.last_action = action.action
@@ -108,13 +149,22 @@ class APIEnvironment(Environment):
             reward += 10
 
         reward -= 0.01 * self.latency
-        reward -= 2 * self.state.retry_count
+
+        # 🔥 scaled retry penalty
+        reward -= 1.5 * (self.state.retry_count ** 1.2)
+
         reward -= 3 * self.cost
 
         if self.current_status == "failed":
             reward -= 8
 
-        # DONE CONDITION (IMPORTANT CHANGE)
+        # 🔥 discourage cache overuse
+        if action.action == "use_cache":
+            reward -= 1
+
+        # -----------------------------
+        # DONE CONDITION
+        # -----------------------------
         done = (
             self.state.step_count >= 5
             or self.state.retry_count >= 5
