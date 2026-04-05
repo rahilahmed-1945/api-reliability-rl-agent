@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Literal
 from openenv.core.env_server import Action, Observation, State
 
 
@@ -6,7 +6,7 @@ from openenv.core.env_server import Action, Observation, State
 # ACTION (what agent does)
 # =========================
 class APIAction(Action):
-    action: str  # retry, switch_api, use_cache, return_error
+    action: Literal["retry", "switch_api", "use_cache", "return_error"]
 
 
 # =========================

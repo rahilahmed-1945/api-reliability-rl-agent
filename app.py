@@ -1,13 +1,33 @@
 import gradio as gr
 import requests
+import os
+from openai import OpenAI
 
-BASE_URL = "http://localhost:8000"
+# -----------------------------
+# CONFIG
+# -----------------------------
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+
+client = OpenAI(
+    api_key=os.getenv("HF_TOKEN", "dummy"),
+    base_url=os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+)
+
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
+
+# -----------------------------
+# GLOBAL STATE
+# -----------------------------
+env_initialized = False
+
 
 # -----------------------------
 # RESET ENV
 # -----------------------------
 def reset_env(difficulty):
+    global env_initialized
     res = requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty})
+    env_initialized = True
     return res.json()
 
 
@@ -15,24 +35,68 @@ def reset_env(difficulty):
 # STEP ENV
 # -----------------------------
 def step_env(action):
-    payload = {
-        "action": {
-            "action": action
-        }
-    }
+    payload = {"action": {"action": action}}
     res = requests.post(f"{BASE_URL}/step", json=payload)
     return res.json()
 
 
 # -----------------------------
-# MAIN FUNCTION (UI LOGIC)
+# SCORE FUNCTION
+# -----------------------------
+def compute_score(reward):
+    if reward >= 10:
+        return 1.0
+    elif reward >= 0:
+        return 0.5
+    else:
+        return 0.0
+
+
+# -----------------------------
+# AI EXPLANATION
+# -----------------------------
+def explain_action(obs, action):
+    try:
+        prompt = f"""
+You are an expert backend engineer.
+
+System state:
+- API status: {obs['api_status']}
+- Latency: {obs['latency']} ms
+- Retry count: {obs['retry_count']}
+- System load: {obs['system_load']}
+
+Explain briefly (1-2 lines) why choosing '{action}' is a good or bad decision.
+"""
+
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=40
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception:
+        return "AI explanation unavailable"
+
+
+# -----------------------------
+# MAIN FUNCTION
 # -----------------------------
 def run_step(difficulty, action):
-    reset_response = reset_env(difficulty)
+    global env_initialized
+
+    if not env_initialized:
+        reset_env(difficulty)
 
     step_response = step_env(action)
 
     obs = step_response["observation"]
+    reward = step_response["reward"]
+
+    score = compute_score(reward)
+    explanation = explain_action(obs, action)
 
     return (
         obs["api_status"],
@@ -40,15 +104,25 @@ def run_step(difficulty, action):
         obs["retry_count"],
         round(obs["api_cost"], 3),
         obs["system_load"],
-        round(step_response["reward"], 2),
+        round(reward, 2),
+        score,
+        explanation,
         step_response["done"]
     )
 
 
 # -----------------------------
-# GRADIO UI
+# RESET BUTTON HANDLER
 # -----------------------------
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
+def manual_reset(difficulty):
+    reset_env(difficulty)
+    return "Environment reset"
+
+
+# -----------------------------
+# UI
+# -----------------------------
+with gr.Blocks() as demo:
     gr.Markdown("# 🚀 API Reliability RL Environment")
     gr.Markdown("Simulate intelligent decision-making under API failures")
 
@@ -61,6 +135,9 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         )
 
     run_btn = gr.Button("Run Step")
+    reset_btn = gr.Button("Reset Environment")  # 🔥 NEW
+
+    status_msg = gr.Textbox(label="Status")
 
     with gr.Row():
         api_status = gr.Textbox(label="API Status")
@@ -73,12 +150,31 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
     with gr.Row():
         reward = gr.Number(label="Reward")
-        done = gr.Checkbox(label="Done")
+        score = gr.Number(label="Score (0–1)")
+
+    explanation = gr.Textbox(label="🤖 AI Explanation")
+    done = gr.Checkbox(label="Done")
 
     run_btn.click(
         fn=run_step,
         inputs=[difficulty, action],
-        outputs=[api_status, latency, retry_count, api_cost, system_load, reward, done]
+        outputs=[
+            api_status,
+            latency,
+            retry_count,
+            api_cost,
+            system_load,
+            reward,
+            score,
+            explanation,
+            done
+        ]
+    )
+
+    reset_btn.click(
+        fn=manual_reset,
+        inputs=[difficulty],
+        outputs=[status_msg]
     )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
