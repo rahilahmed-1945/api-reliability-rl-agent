@@ -15,19 +15,12 @@ client = OpenAI(
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
-# -----------------------------
-# GLOBAL STATE
-# -----------------------------
-env_initialized = False
-
 
 # -----------------------------
 # RESET ENV
 # -----------------------------
 def reset_env(difficulty):
-    global env_initialized
     res = requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty})
-    env_initialized = True
     return res.json()
 
 
@@ -53,58 +46,52 @@ def compute_score(reward):
 
 
 # -----------------------------
-# ✅ SYSTEM DECIDES GOOD/BAD
+# LABEL (FIXED THRESHOLD)
 # -----------------------------
 def get_label(reward):
-    return "GOOD" if reward >= 8 else "BAD"
+    return "GOOD" if reward >= 5 else "BAD"
 
 
 # -----------------------------
-# 🤖 AI EXPLAINS (NOT DECIDES)
+# AI EXPLANATION
 # -----------------------------
 def explain_action(obs, action, label):
     try:
         prompt = f"""
-You are an expert backend engineer.
-
 Decision: {label}
 
 State:
-- API status: {obs['api_status']}
-- Latency: {obs['latency']} ms
-- Retry count: {obs['retry_count']}
-- System load: {obs['system_load']}
+- status: {obs['api_status']}
+- latency: {obs['latency']}
+- load: {obs['system_load']}
+- retries: {obs['retry_count']}
 
-Action taken: {action}
+Note:
+- latency < 150 ms is GOOD
+- success is GOOD
 
-Explain WHY this decision is {label}.
-Use at least two factors (latency, retries, load, status).
-Output ONE line only.
+Explain briefly.
 """
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=40,
-            temperature=0.5,
-            stop=["\n"]
+            max_tokens=30,
+            temperature=0.5
         )
 
-        explanation = response.choices[0].message.content.strip()
-        return f"{label} - {explanation}"
+        return f"{label} - {response.choices[0].message.content.strip()}"
 
     except Exception:
         return f"{label} - Explanation unavailable"
 
 
 # -----------------------------
-# MAIN FUNCTION
+# MAIN FUNCTION (🔥 FIXED)
 # -----------------------------
 def run_step(difficulty, action):
-    global env_initialized
-
-    if not env_initialized:
-        reset_env(difficulty)
+    # 🔥 ALWAYS RESET → ensures new random environment
+    reset_env(difficulty)
 
     step_response = step_env(action)
 
@@ -129,7 +116,7 @@ def run_step(difficulty, action):
 
 
 # -----------------------------
-# RESET BUTTON HANDLER
+# RESET BUTTON
 # -----------------------------
 def manual_reset(difficulty):
     reset_env(difficulty)
