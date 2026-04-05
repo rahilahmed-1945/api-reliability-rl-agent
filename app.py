@@ -53,26 +53,38 @@ def compute_score(reward):
 
 
 # -----------------------------
-# AI EXPLANATION
+# 🤖 AI EXPLANATION (IMPROVED)
 # -----------------------------
 def explain_action(obs, action):
     try:
         prompt = f"""
-You are an expert backend engineer.
+You are an expert backend engineer evaluating API reliability decisions.
 
-System state:
+Context:
+This system simulates API failures, latency, retries, and cost trade-offs.
+
+Current state:
 - API status: {obs['api_status']}
 - Latency: {obs['latency']} ms
 - Retry count: {obs['retry_count']}
 - System load: {obs['system_load']}
 
-Explain briefly (1-2 lines) why choosing '{action}' is a good or bad decision.
+Action taken: {action}
+
+Evaluate whether this action was GOOD or BAD based on:
+- latency (lower is better)
+- success vs failure
+- retry count (lower is better)
+- cost efficiency
+
+Give a short 1–2 line explanation specific to this scenario.
+Do NOT give generic explanations.
 """
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=40
+            max_tokens=50
         )
 
         return response.choices[0].message.content.strip()
@@ -135,7 +147,7 @@ with gr.Blocks() as demo:
         )
 
     run_btn = gr.Button("Run Step")
-    reset_btn = gr.Button("Reset Environment")  # 🔥 NEW
+    reset_btn = gr.Button("Reset Environment")
 
     status_msg = gr.Textbox(label="Status")
 
