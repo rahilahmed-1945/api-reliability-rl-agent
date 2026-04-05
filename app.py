@@ -51,7 +51,7 @@ def get_state(obs):
 
 
 # -----------------------------
-# AGENT (ε-greedy)
+# AGENT
 # -----------------------------
 def agent(obs):
     state = get_state(obs)
@@ -83,12 +83,7 @@ def update_q(obs, action, reward, next_obs):
 # SCORE + LABEL
 # -----------------------------
 def compute_score(reward):
-    if reward >= 10:
-        return 1.0
-    elif reward >= 0:
-        return 0.5
-    else:
-        return 0.0
+    return 1.0 if reward >= 10 else (0.5 if reward >= 0 else 0.0)
 
 
 def get_label(reward):
@@ -109,23 +104,14 @@ State:
 - load: {obs['system_load']}
 - retries: {obs['retry_count']}
 
-Rules:
-- latency < 100 ms = GOOD
-- if status = success → DO NOT retry/switch/cache
-- use_cache only when latency >150 ms
-- retry only when failed
-- switching API without failure is BAD
-
 Explain in ONE short line.
 """
-
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=30,
+            max_tokens=25,
             temperature=0.4
         )
-
         return f"{label} - {response.choices[0].message.content.strip()}"
 
     except:
@@ -133,22 +119,24 @@ Explain in ONE short line.
 
 
 # -----------------------------
-# RL TRAINING + RUN
+# FAST RL LOOP (FIXED)
 # -----------------------------
 def run_step(difficulty, _):
 
-    EPISODES = 10  # safe training size
+    EPISODES = 5        # 🔥 reduced
+    MAX_STEPS = 3       # 🔥 reduced
 
     last_obs = None
     last_reward = 0
     last_action = None
 
-    for episode in range(EPISODES):
+    for _ in range(EPISODES):
 
         obs = reset_env(difficulty)["observation"]
         done = False
+        step_count = 0
 
-        while not done:
+        while not done and step_count < MAX_STEPS:
             action = agent(obs)
 
             res = step_env(action)
@@ -159,12 +147,12 @@ def run_step(difficulty, _):
 
             obs = next_obs
             done = res["done"]
+            step_count += 1
 
             last_obs = obs
             last_reward = reward
             last_action = action
 
-    # learning growth
     states_learned = len(Q)
 
     score = compute_score(last_reward)
@@ -186,7 +174,7 @@ def run_step(difficulty, _):
 
 
 # -----------------------------
-# RESET BUTTON
+# RESET
 # -----------------------------
 def manual_reset(difficulty):
     reset_env(difficulty)
@@ -198,49 +186,35 @@ def manual_reset(difficulty):
 # -----------------------------
 with gr.Blocks() as demo:
     gr.Markdown("# 🚀 API Reliability RL Agent")
-    gr.Markdown("Autonomous decision-making with reinforcement learning")
+    gr.Markdown("Fast RL training (optimized for Hugging Face)")
 
-    with gr.Row():
-        difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy", label="Difficulty")
+    difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy")
 
     run_btn = gr.Button("Run RL Training")
     reset_btn = gr.Button("Reset Environment")
 
-    status_msg = gr.Textbox(label="Status")
+    status_msg = gr.Textbox()
 
-    with gr.Row():
-        api_status = gr.Textbox(label="API Status")
-        latency = gr.Number(label="Latency (ms)")
-        retry_count = gr.Number(label="Retry Count")
+    api_status = gr.Textbox(label="API Status")
+    latency = gr.Number(label="Latency")
+    retry_count = gr.Number(label="Retries")
 
-    with gr.Row():
-        api_cost = gr.Number(label="API Cost")
-        system_load = gr.Textbox(label="System Load")
+    api_cost = gr.Number(label="Cost")
+    system_load = gr.Textbox(label="Load")
 
-    with gr.Row():
-        reward = gr.Number(label="Reward")
-        score = gr.Number(label="Score (0–1)")
+    reward = gr.Number(label="Reward")
+    score = gr.Number(label="Score")
 
-    explanation = gr.Textbox(label="🤖 AI Explanation")
+    explanation = gr.Textbox(label="Explanation")
     done = gr.Checkbox(label="Done")
 
-    states_learned = gr.Number(label="States Learned (Q-table size)")
+    states = gr.Number(label="States Learned")
 
     run_btn.click(
         run_step,
         [difficulty, gr.Textbox(visible=False)],
-        [
-            api_status,
-            latency,
-            retry_count,
-            api_cost,
-            system_load,
-            reward,
-            score,
-            explanation,
-            done,
-            states_learned
-        ]
+        [api_status, latency, retry_count, api_cost, system_load,
+         reward, score, explanation, done, states]
     )
 
     reset_btn.click(manual_reset, [difficulty], [status_msg])
