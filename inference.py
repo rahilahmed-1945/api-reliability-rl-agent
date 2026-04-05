@@ -7,9 +7,7 @@ from openai import OpenAI
 # -----------------------------
 # CONFIG
 # -----------------------------
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
-
-random.seed(42)
+BASE_URL = os.getenv("BASE_URL", "http://0.0.0.0:8000")
 
 client = OpenAI(
     api_key=os.getenv("HF_TOKEN", "dummy"),
@@ -18,30 +16,25 @@ client = OpenAI(
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
+random.seed(42)
 
 # -----------------------------
-# RESET ENVIRONMENT
+# RESET ENV
 # -----------------------------
 def reset_env(difficulty="easy"):
-    response = requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty})
-    return response.json()
+    return requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty}).json()
 
 
 # -----------------------------
-# STEP FUNCTION
+# STEP ENV
 # -----------------------------
 def step_env(action):
-    payload = {
-        "action": {
-            "action": action
-        }
-    }
-    response = requests.post(f"{BASE_URL}/step", json=payload)
-    return response.json()
+    payload = {"action": {"action": action}}
+    return requests.post(f"{BASE_URL}/step", json=payload).json()
 
 
 # -----------------------------
-# GRADER
+# SCORE FUNCTION
 # -----------------------------
 def compute_score(total_reward):
     if total_reward >= 30:
@@ -53,34 +46,46 @@ def compute_score(total_reward):
 
 
 # -----------------------------
-# AGENTS
+# 🔥 LLM AGENT (REAL AI)
 # -----------------------------
-def random_agent():
-    return random.choice(["retry", "switch_api", "use_cache", "return_error"])
+def llm_agent(obs):
+    prompt = f"""
+You are an API reliability decision agent.
 
+State:
+- status: {obs['observation']['api_status']}
+- latency: {obs['observation']['latency']}
+- retries: {obs['observation']['retry_count']}
+- load: {obs['observation']['system_load']}
 
-def bad_agent():
-    return "retry"
+Choose ONE action from:
+retry, switch_api, use_cache, return_error
 
+Only output the action.
+"""
 
-def heuristic_agent(obs):
-    status = obs["observation"]["api_status"]
-    retry_count = obs["observation"]["retry_count"]
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=5
+        )
 
-    if status == "failed" and retry_count < 2:
+        action = response.choices[0].message.content.strip().lower()
+
+        if action not in ["retry", "switch_api", "use_cache", "return_error"]:
+            return "retry"
+
+        return action
+
+    except:
         return "retry"
-    elif status == "failed":
-        return "switch_api"
-    elif status == "slow":
-        return "use_cache"
-    else:
-        return "return_error"
 
 
 # -----------------------------
 # RUN EPISODE
 # -----------------------------
-def run_episode(agent_name, difficulty="easy"):
+def run_episode(difficulty="easy"):
     print(f"[START] task={difficulty} env=api_env model={MODEL_NAME}")
 
     obs = reset_env(difficulty)
@@ -88,7 +93,6 @@ def run_episode(agent_name, difficulty="easy"):
     rewards_list = []
     step_count = 0
     done = False
-    success = False  # FIXED
 
     MAX_STEPS = 10
 
@@ -96,22 +100,7 @@ def run_episode(agent_name, difficulty="easy"):
         step_count += 1
 
         try:
-            # Minimal OpenAI call (compliance only)
-            try:
-                client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[{"role": "user", "content": "test"}],
-                    max_tokens=1
-                )
-            except:
-                pass
-
-            if agent_name == "random":
-                action = random_agent()
-            elif agent_name == "bad":
-                action = bad_agent()
-            else:
-                action = heuristic_agent(obs)
+            action = llm_agent(obs)
 
             result = step_env(action)
 
@@ -136,6 +125,9 @@ def run_episode(agent_name, difficulty="easy"):
 
         time.sleep(0.1)
 
+    if not done:
+        success = False
+
     score = compute_score(total_reward)
     rewards_str = ",".join([f"{r:.2f}" for r in rewards_list])
 
@@ -147,5 +139,4 @@ def run_episode(agent_name, difficulty="easy"):
 # -----------------------------
 if __name__ == "__main__":
     for difficulty in ["easy", "medium", "hard"]:
-        for agent in ["random", "bad", "heuristic"]:
-            run_episode(agent, difficulty=difficulty)
+        run_episode(difficulty)
