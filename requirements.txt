@@ -2,4 +2,4 @@ openenv-core
 fastapi
 uvicorn
 gradio
-requests+
+requests
