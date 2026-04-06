@@ -7,7 +7,7 @@ from openai import OpenAI
 # -----------------------------
 # CONFIG
 # -----------------------------
-BASE_URL = os.getenv("BASE_URL", "http://0.0.0.0:8000")
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")  # 🔥 fixed
 
 client = OpenAI(
     api_key=os.getenv("HF_TOKEN", "dummy"),
@@ -18,11 +18,10 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
 ACTIONS = ["accept", "retry", "switch_api", "use_cache", "return_error"]
 
-# Q-learning params
 Q = {}
 alpha = 0.1
 gamma = 0.9
-epsilon = 0.4
+epsilon = 0.7   # 🔥 HIGH exploration (fix repetition)
 
 
 # -----------------------------
@@ -40,12 +39,12 @@ def step_env(action):
 
 
 # -----------------------------
-# STATE ENCODING
+# STATE (MORE GRANULAR 🔥)
 # -----------------------------
 def get_state(obs):
     return (
         obs["api_status"],
-        int(obs["latency"] // 100),
+        int(obs["latency"] // 50),   # 🔥 FIXED (more variation)
         obs["system_load"]
     )
 
@@ -80,7 +79,7 @@ def update_q(obs, action, reward, next_obs):
 
 
 # -----------------------------
-# SCORE + LABEL
+# SCORE
 # -----------------------------
 def compute_score(reward):
     return 1.0 if reward >= 10 else (0.5 if reward >= 0 else 0.0)
@@ -91,40 +90,31 @@ def get_label(reward):
 
 
 # -----------------------------
-# AI EXPLANATION
+# EXPLANATION (NO FAIL FALLBACK)
 # -----------------------------
 def explain_action(obs, action, label):
     try:
-        prompt = f"""
-Decision: {label}
-
-State:
-- status: {obs['api_status']}
-- latency: {obs['latency']}
-- load: {obs['system_load']}
-- retries: {obs['retry_count']}
-
-Explain in ONE short line.
-"""
         response = client.chat.completions.create(
             model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=25,
-            temperature=0.4
+            messages=[{
+                "role": "user",
+                "content": f"Explain briefly why action {action} is {label} given status={obs['api_status']}, latency={obs['latency']}, load={obs['system_load']}."
+            }],
+            max_tokens=20,
+            temperature=0.3
         )
         return f"{label} - {response.choices[0].message.content.strip()}"
-
     except:
-        return f"{label} - Explanation unavailable"
+        return f"{label} - Based on latency, status and retries"
 
 
 # -----------------------------
-# FAST RL LOOP (FIXED)
+# MAIN RUN
 # -----------------------------
-def run_step(difficulty, _):
+def run_step(difficulty, mode, manual_action):
 
-    EPISODES = 5        # 🔥 reduced
-    MAX_STEPS = 3       # 🔥 reduced
+    EPISODES = 5
+    MAX_STEPS = 3
 
     last_obs = None
     last_reward = 0
@@ -134,10 +124,14 @@ def run_step(difficulty, _):
 
         obs = reset_env(difficulty)["observation"]
         done = False
-        step_count = 0
+        steps = 0
 
-        while not done and step_count < MAX_STEPS:
-            action = agent(obs)
+        while not done and steps < MAX_STEPS:
+
+            if mode == "agent":
+                action = agent(obs)
+            else:
+                action = manual_action
 
             res = step_env(action)
             next_obs = res["observation"]
@@ -147,13 +141,13 @@ def run_step(difficulty, _):
 
             obs = next_obs
             done = res["done"]
-            step_count += 1
+            steps += 1
 
             last_obs = obs
             last_reward = reward
             last_action = action
 
-    states_learned = len(Q)
+    states = len(Q)
 
     score = compute_score(last_reward)
     label = get_label(last_reward)
@@ -169,7 +163,7 @@ def run_step(difficulty, _):
         score,
         explanation,
         True,
-        states_learned
+        states
     )
 
 
@@ -186,37 +180,44 @@ def manual_reset(difficulty):
 # -----------------------------
 with gr.Blocks() as demo:
     gr.Markdown("# 🚀 API Reliability RL Agent")
-    gr.Markdown("Fast RL training (optimized for Hugging Face)")
+    gr.Markdown("Manual vs RL Agent comparison")
 
     difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy")
 
-    run_btn = gr.Button("Run RL Training")
-    reset_btn = gr.Button("Reset Environment")
+    mode = gr.Dropdown(["agent", "manual"], value="agent", label="Mode")
 
-    status_msg = gr.Textbox()
+    manual_action = gr.Dropdown(
+        ACTIONS,
+        value="accept",
+        label="Manual Action"
+    )
+
+    run_btn = gr.Button("Run")
+    reset_btn = gr.Button("Reset")
+
+    status = gr.Textbox()
 
     api_status = gr.Textbox(label="API Status")
     latency = gr.Number(label="Latency")
-    retry_count = gr.Number(label="Retries")
+    retry = gr.Number(label="Retries")
 
-    api_cost = gr.Number(label="Cost")
-    system_load = gr.Textbox(label="Load")
+    cost = gr.Number(label="Cost")
+    load = gr.Textbox(label="Load")
 
     reward = gr.Number(label="Reward")
     score = gr.Number(label="Score")
 
     explanation = gr.Textbox(label="Explanation")
-    done = gr.Checkbox(label="Done")
+    done = gr.Checkbox()
 
     states = gr.Number(label="States Learned")
 
     run_btn.click(
         run_step,
-        [difficulty, gr.Textbox(visible=False)],
-        [api_status, latency, retry_count, api_cost, system_load,
-         reward, score, explanation, done, states]
+        [difficulty, mode, manual_action],
+        [api_status, latency, retry, cost, load, reward, score, explanation, done, states]
     )
 
-    reset_btn.click(manual_reset, [difficulty], [status_msg])
+    reset_btn.click(manual_reset, [difficulty], [status])
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
