@@ -7,7 +7,7 @@ from openai import OpenAI
 # -----------------------------
 # CONFIG
 # -----------------------------
-BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")  # 🔥 fixed
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
 client = OpenAI(
     api_key=os.getenv("HF_TOKEN", "dummy"),
@@ -21,7 +21,7 @@ ACTIONS = ["accept", "retry", "switch_api", "use_cache", "return_error"]
 Q = {}
 alpha = 0.1
 gamma = 0.9
-epsilon = 0.7   # 🔥 HIGH exploration (fix repetition)
+epsilon = 0.7  # 🔥 high exploration
 
 
 # -----------------------------
@@ -39,32 +39,35 @@ def step_env(action):
 
 
 # -----------------------------
-# STATE (MORE GRANULAR 🔥)
+# STATE
 # -----------------------------
 def get_state(obs):
     return (
         obs["api_status"],
-        int(obs["latency"] // 50),   # 🔥 FIXED (more variation)
+        int(obs["latency"] // 50),
         obs["system_load"]
     )
 
 
 # -----------------------------
-# AGENT
+# AGENT (FIXED)
 # -----------------------------
 def agent(obs):
     state = get_state(obs)
 
-    if state not in Q or random.random() < epsilon:
+    # force exploration early
+    if state not in Q or random.random() < epsilon or len(Q) < 10:
         return random.choice(ACTIONS)
 
     return max(Q[state], key=Q[state].get)
 
 
 # -----------------------------
-# Q UPDATE
+# Q UPDATE (CLAMPED)
 # -----------------------------
 def update_q(obs, action, reward, next_obs):
+    reward = max(min(reward, 10), -10)  # 🔥 stabilize
+
     state = get_state(obs)
     next_state = get_state(next_obs)
 
@@ -79,18 +82,23 @@ def update_q(obs, action, reward, next_obs):
 
 
 # -----------------------------
-# SCORE
+# SCORE + LABEL
 # -----------------------------
 def compute_score(reward):
     return 1.0 if reward >= 10 else (0.5 if reward >= 0 else 0.0)
 
 
 def get_label(reward):
-    return "GOOD" if reward >= 4 else "BAD"
+    if reward >= 6:
+        return "GOOD"
+    elif reward >= 0:
+        return "OKAY"
+    else:
+        return "BAD"
 
 
 # -----------------------------
-# EXPLANATION (NO FAIL FALLBACK)
+# EXPLANATION
 # -----------------------------
 def explain_action(obs, action, label):
     try:
@@ -98,7 +106,7 @@ def explain_action(obs, action, label):
             model=MODEL_NAME,
             messages=[{
                 "role": "user",
-                "content": f"Explain briefly why action {action} is {label} given status={obs['api_status']}, latency={obs['latency']}, load={obs['system_load']}."
+                "content": f"Explain why {action} is {label} given status={obs['api_status']}, latency={obs['latency']}, load={obs['system_load']}."
             }],
             max_tokens=20,
             temperature=0.3
@@ -109,9 +117,14 @@ def explain_action(obs, action, label):
 
 
 # -----------------------------
-# MAIN RUN
+# MAIN LOOP (FIXED)
 # -----------------------------
 def run_step(difficulty, mode, manual_action):
+    global Q
+
+    # 🔥 reset bad learning if too big
+    if len(Q) > 100:
+        Q = {}
 
     EPISODES = 5
     MAX_STEPS = 3
@@ -125,6 +138,7 @@ def run_step(difficulty, mode, manual_action):
         obs = reset_env(difficulty)["observation"]
         done = False
         steps = 0
+        prev_action = None
 
         while not done and steps < MAX_STEPS:
 
@@ -132,6 +146,12 @@ def run_step(difficulty, mode, manual_action):
                 action = agent(obs)
             else:
                 action = manual_action
+
+            # 🔥 avoid repeating same action
+            if action == prev_action:
+                action = random.choice(ACTIONS)
+
+            prev_action = action
 
             res = step_env(action)
             next_obs = res["observation"]
@@ -186,11 +206,7 @@ with gr.Blocks() as demo:
 
     mode = gr.Dropdown(["agent", "manual"], value="agent", label="Mode")
 
-    manual_action = gr.Dropdown(
-        ACTIONS,
-        value="accept",
-        label="Manual Action"
-    )
+    manual_action = gr.Dropdown(ACTIONS, value="accept", label="Manual Action")
 
     run_btn = gr.Button("Run")
     reset_btn = gr.Button("Reset")
