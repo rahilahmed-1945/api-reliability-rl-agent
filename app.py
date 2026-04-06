@@ -23,7 +23,10 @@ def reset_env(difficulty):
     return requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty}).json()
 
 def step_env(action):
-    return requests.post(f"{BASE_URL}/step", json={"action": {"action": action}}).json()
+    return requests.post(
+        f"{BASE_URL}/step",
+        json={"action": {"action": action}}
+    ).json()
 
 
 # -----------------------------
@@ -85,24 +88,37 @@ def compute_score(reward):
 
 
 # -----------------------------
-# MAIN (🔥 FAST RL)
+# MAIN (🔥 FAST RL + SUGGESTION)
 # -----------------------------
 def run_step(difficulty):
 
-    # only 1 episode, 2 steps → SUPER FAST
+    # reset env
     obs = reset_env(difficulty)["observation"]
 
-    action = agent(obs)
-    res = step_env(action)
+    # 🔥 suggested best action
+    state = get_state(obs)
 
+    if state in Q:
+        best_action = max(Q[state], key=Q[state].get)
+    else:
+        best_action = "exploring"
+
+    # 🔥 agent action
+    action = agent(obs)
+
+    # take step
+    res = step_env(action)
     next_obs = res["observation"]
     reward = res["reward"]
 
+    # update learning
     update_q(obs, action, reward, next_obs)
 
     label = get_label(reward)
 
     return (
+        best_action,
+        action,
         next_obs["api_status"],
         round(next_obs["latency"], 2),
         next_obs["retry_count"],
@@ -120,12 +136,15 @@ def run_step(difficulty):
 # UI
 # -----------------------------
 with gr.Blocks() as demo:
-    gr.Markdown("# 🚀 Fast RL Agent")
-    gr.Markdown("Instant decision with learning")
+    gr.Markdown("# 🚀 Smart API RL Agent")
+    gr.Markdown("Suggests best action + learns from outcomes")
 
     difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy")
 
     run_btn = gr.Button("Run")
+
+    best_action_box = gr.Textbox(label="💡 Suggested Best Action")
+    taken_action_box = gr.Textbox(label="🤖 Agent Action")
 
     api_status = gr.Textbox(label="API Status")
     latency = gr.Number(label="Latency")
@@ -137,7 +156,7 @@ with gr.Blocks() as demo:
     reward = gr.Number(label="Reward")
     score = gr.Number(label="Score")
 
-    explanation = gr.Textbox(label="Explanation")
+    explanation = gr.Textbox(label="Decision")
     done = gr.Checkbox()
 
     states = gr.Number(label="States Learned")
@@ -145,8 +164,20 @@ with gr.Blocks() as demo:
     run_btn.click(
         run_step,
         [difficulty],
-        [api_status, latency, retry, cost, load,
-         reward, score, explanation, done, states]
+        [
+            best_action_box,
+            taken_action_box,
+            api_status,
+            latency,
+            retry,
+            cost,
+            load,
+            reward,
+            score,
+            explanation,
+            done,
+            states
+        ]
     )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
