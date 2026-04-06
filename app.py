@@ -21,21 +21,19 @@ ACTIONS = ["accept", "retry", "switch_api", "use_cache", "return_error"]
 Q = {}
 alpha = 0.1
 gamma = 0.9
-epsilon = 0.7  # 🔥 high exploration
+epsilon = 0.6
+
+trained = False
 
 
 # -----------------------------
-# ENV CALLS
+# ENV
 # -----------------------------
 def reset_env(difficulty):
     return requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty}).json()
 
-
 def step_env(action):
-    return requests.post(
-        f"{BASE_URL}/step",
-        json={"action": {"action": action}}
-    ).json()
+    return requests.post(f"{BASE_URL}/step", json={"action": {"action": action}}).json()
 
 
 # -----------------------------
@@ -50,110 +48,69 @@ def get_state(obs):
 
 
 # -----------------------------
-# AGENT (FIXED)
+# AGENT
 # -----------------------------
 def agent(obs):
     state = get_state(obs)
 
-    # force exploration early
-    if state not in Q or random.random() < epsilon or len(Q) < 10:
+    if state not in Q or random.random() < epsilon:
         return random.choice(ACTIONS)
 
     return max(Q[state], key=Q[state].get)
 
 
 # -----------------------------
-# Q UPDATE (CLAMPED)
+# UPDATE
 # -----------------------------
 def update_q(obs, action, reward, next_obs):
-    reward = max(min(reward, 10), -10)  # 🔥 stabilize
+    reward = max(min(reward, 10), -10)
 
-    state = get_state(obs)
-    next_state = get_state(next_obs)
+    s = get_state(obs)
+    ns = get_state(next_obs)
 
-    if state not in Q:
-        Q[state] = {a: 0 for a in ACTIONS}
-    if next_state not in Q:
-        Q[next_state] = {a: 0 for a in ACTIONS}
+    if s not in Q:
+        Q[s] = {a: 0 for a in ACTIONS}
+    if ns not in Q:
+        Q[ns] = {a: 0 for a in ACTIONS}
 
-    Q[state][action] += alpha * (
-        reward + gamma * max(Q[next_state].values()) - Q[state][action]
+    Q[s][action] += alpha * (
+        reward + gamma * max(Q[ns].values()) - Q[s][action]
     )
 
 
 # -----------------------------
-# SCORE + LABEL
+# LABEL
 # -----------------------------
-def compute_score(reward):
-    return 1.0 if reward >= 10 else (0.5 if reward >= 0 else 0.0)
-
-
 def get_label(reward):
-    if reward >= 6:
+    if reward >= 8:
         return "GOOD"
-    elif reward >= 0:
+    elif reward >= 1:
         return "OKAY"
     else:
         return "BAD"
 
 
-# -----------------------------
-# EXPLANATION
-# -----------------------------
-def explain_action(obs, action, label):
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{
-                "role": "user",
-                "content": f"Explain why {action} is {label} given status={obs['api_status']}, latency={obs['latency']}, load={obs['system_load']}."
-            }],
-            max_tokens=20,
-            temperature=0.3
-        )
-        return f"{label} - {response.choices[0].message.content.strip()}"
-    except:
-        return f"{label} - Based on latency, status and retries"
+def compute_score(reward):
+    return 1 if reward >= 8 else (0.5 if reward >= 1 else 0)
 
 
 # -----------------------------
-# MAIN LOOP (FIXED)
+# TRAIN (RUN ONCE)
 # -----------------------------
-def run_step(difficulty, mode, manual_action):
-    global Q
+def train_agent(difficulty):
+    global trained
 
-    # 🔥 reset bad learning if too big
-    if len(Q) > 100:
-        Q = {}
-
-    EPISODES = 5
+    EPISODES = 12
     MAX_STEPS = 3
 
-    last_obs = None
-    last_reward = 0
-    last_action = None
-
     for _ in range(EPISODES):
-
         obs = reset_env(difficulty)["observation"]
         done = False
-        steps = 0
-        prev_action = None
 
-        while not done and steps < MAX_STEPS:
-
-            if mode == "agent":
-                action = agent(obs)
-            else:
-                action = manual_action
-
-            # 🔥 avoid repeating same action
-            if action == prev_action:
-                action = random.choice(ACTIONS)
-
-            prev_action = action
-
+        while not done:
+            action = agent(obs)
             res = step_env(action)
+
             next_obs = res["observation"]
             reward = res["reward"]
 
@@ -161,57 +118,55 @@ def run_step(difficulty, mode, manual_action):
 
             obs = next_obs
             done = res["done"]
-            steps += 1
 
-            last_obs = obs
-            last_reward = reward
-            last_action = action
+    trained = True
+    return f"Training done | States learned: {len(Q)}"
 
-    states = len(Q)
 
-    score = compute_score(last_reward)
-    label = get_label(last_reward)
-    explanation = explain_action(last_obs, last_action, label)
+# -----------------------------
+# RUN (FAST)
+# -----------------------------
+def run_agent(difficulty):
+    if not trained:
+        return ("Train first!", 0, 0, 0, "", 0, 0, "No model", False, 0)
+
+    obs = reset_env(difficulty)["observation"]
+
+    action = agent(obs)
+    res = step_env(action)
+
+    obs = res["observation"]
+    reward = res["reward"]
+
+    label = get_label(reward)
 
     return (
-        last_obs["api_status"],
-        round(last_obs["latency"], 2),
-        last_obs["retry_count"],
-        round(last_obs["api_cost"], 3),
-        last_obs["system_load"],
-        round(last_reward, 2),
-        score,
-        explanation,
+        obs["api_status"],
+        round(obs["latency"], 2),
+        obs["retry_count"],
+        round(obs["api_cost"], 3),
+        obs["system_load"],
+        round(reward, 2),
+        compute_score(reward),
+        f"{label} - Agent decision",
         True,
-        states
+        len(Q)
     )
-
-
-# -----------------------------
-# RESET
-# -----------------------------
-def manual_reset(difficulty):
-    reset_env(difficulty)
-    return "Environment reset"
 
 
 # -----------------------------
 # UI
 # -----------------------------
 with gr.Blocks() as demo:
-    gr.Markdown("# 🚀 API Reliability RL Agent")
-    gr.Markdown("Manual vs RL Agent comparison")
+    gr.Markdown("# 🚀 API Reliability RL Agent (FINAL)")
+    gr.Markdown("Train once → Run fast decisions")
 
     difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy")
 
-    mode = gr.Dropdown(["agent", "manual"], value="agent", label="Mode")
+    train_btn = gr.Button("🔥 Train Agent")
+    run_btn = gr.Button("⚡ Run Agent")
 
-    manual_action = gr.Dropdown(ACTIONS, value="accept", label="Manual Action")
-
-    run_btn = gr.Button("Run")
-    reset_btn = gr.Button("Reset")
-
-    status = gr.Textbox()
+    status = gr.Textbox(label="Status")
 
     api_status = gr.Textbox(label="API Status")
     latency = gr.Number(label="Latency")
@@ -228,12 +183,13 @@ with gr.Blocks() as demo:
 
     states = gr.Number(label="States Learned")
 
-    run_btn.click(
-        run_step,
-        [difficulty, mode, manual_action],
-        [api_status, latency, retry, cost, load, reward, score, explanation, done, states]
-    )
+    train_btn.click(train_agent, [difficulty], [status])
 
-    reset_btn.click(manual_reset, [difficulty], [status])
+    run_btn.click(
+        run_agent,
+        [difficulty],
+        [api_status, latency, retry, cost, load,
+         reward, score, explanation, done, states]
+    )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
