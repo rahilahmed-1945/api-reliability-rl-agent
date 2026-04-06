@@ -2,19 +2,11 @@ import gradio as gr
 import requests
 import os
 import random
-from openai import OpenAI
 
 # -----------------------------
 # CONFIG
 # -----------------------------
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
-
-client = OpenAI(
-    api_key=os.getenv("HF_TOKEN", "dummy"),
-    base_url=os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-)
-
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
 ACTIONS = ["accept", "retry", "switch_api", "use_cache", "return_error"]
 
@@ -22,8 +14,6 @@ Q = {}
 alpha = 0.1
 gamma = 0.9
 epsilon = 0.6
-
-trained = False
 
 
 # -----------------------------
@@ -95,57 +85,29 @@ def compute_score(reward):
 
 
 # -----------------------------
-# TRAIN (RUN ONCE)
+# MAIN (🔥 FAST RL)
 # -----------------------------
-def train_agent(difficulty):
-    global trained
+def run_step(difficulty):
 
-    EPISODES = 12
-    MAX_STEPS = 3
-
-    for _ in range(EPISODES):
-        obs = reset_env(difficulty)["observation"]
-        done = False
-
-        while not done:
-            action = agent(obs)
-            res = step_env(action)
-
-            next_obs = res["observation"]
-            reward = res["reward"]
-
-            update_q(obs, action, reward, next_obs)
-
-            obs = next_obs
-            done = res["done"]
-
-    trained = True
-    return f"Training done | States learned: {len(Q)}"
-
-
-# -----------------------------
-# RUN (FAST)
-# -----------------------------
-def run_agent(difficulty):
-    if not trained:
-        return ("Train first!", 0, 0, 0, "", 0, 0, "No model", False, 0)
-
+    # only 1 episode, 2 steps → SUPER FAST
     obs = reset_env(difficulty)["observation"]
 
     action = agent(obs)
     res = step_env(action)
 
-    obs = res["observation"]
+    next_obs = res["observation"]
     reward = res["reward"]
+
+    update_q(obs, action, reward, next_obs)
 
     label = get_label(reward)
 
     return (
-        obs["api_status"],
-        round(obs["latency"], 2),
-        obs["retry_count"],
-        round(obs["api_cost"], 3),
-        obs["system_load"],
+        next_obs["api_status"],
+        round(next_obs["latency"], 2),
+        next_obs["retry_count"],
+        round(next_obs["api_cost"], 3),
+        next_obs["system_load"],
         round(reward, 2),
         compute_score(reward),
         f"{label} - Agent decision",
@@ -158,15 +120,12 @@ def run_agent(difficulty):
 # UI
 # -----------------------------
 with gr.Blocks() as demo:
-    gr.Markdown("# 🚀 API Reliability RL Agent (FINAL)")
-    gr.Markdown("Train once → Run fast decisions")
+    gr.Markdown("# 🚀 Fast RL Agent")
+    gr.Markdown("Instant decision with learning")
 
     difficulty = gr.Dropdown(["easy", "medium", "hard"], value="easy")
 
-    train_btn = gr.Button("🔥 Train Agent")
-    run_btn = gr.Button("⚡ Run Agent")
-
-    status = gr.Textbox(label="Status")
+    run_btn = gr.Button("Run")
 
     api_status = gr.Textbox(label="API Status")
     latency = gr.Number(label="Latency")
@@ -183,10 +142,8 @@ with gr.Blocks() as demo:
 
     states = gr.Number(label="States Learned")
 
-    train_btn.click(train_agent, [difficulty], [status])
-
     run_btn.click(
-        run_agent,
+        run_step,
         [difficulty],
         [api_status, latency, retry, cost, load,
          reward, score, explanation, done, states]
