@@ -1,109 +1,239 @@
 ---
-title: API Reliability RL Environment
+title: API Reliability RL Agent
 emoji: 🚀
-colorFrom: purple
-colorTo: blue
+colorFrom: blue
+colorTo: purple
 sdk: docker
 app_file: app.py
 pinned: false
 ---
 
-# 🚀 Cost-Aware API Reliability RL Environment
+# 🚀 API Reliability RL Agent
 
-## 🧠 Overview
-
-This project implements a **real-world reinforcement learning (RL) environment** that simulates API reliability challenges in backend systems.
-
-Agents must make intelligent decisions under uncertainty to balance:
-
-* ✅ Success rate
-* ⏱️ Latency
-* 💰 Cost
-
-This models real-world scenarios like microservice failures, API retries, and fallback strategies.
+*A Decision Intelligence System for Smart API Optimization*
 
 ---
 
-## 🎯 Objective
+# 🧠 Overview
 
-Enable agents to learn optimal strategies for handling unreliable APIs using the OpenEnv framework.
+This project implements a **decision intelligence system** that optimizes API usage under uncertain conditions using **Reinforcement Learning (RL)-inspired logic**.
 
----
+Instead of blindly calling APIs, the system:
 
-## 🧩 State Space (Observation)
+* observes current conditions
+* selects an action
+* evaluates the outcome
+* improves decisions over time
 
-| Feature       | Description                 |
-| ------------- | --------------------------- |
-| `api_status`  | success / slow / failed     |
-| `latency`     | Response time in ms         |
-| `retry_count` | Number of retries performed |
-| `api_cost`    | Cost of API usage           |
-| `system_load` | low / medium / high         |
+👉 Goal: **maximize success, minimize latency, and reduce cost**
 
 ---
 
-## ⚡ Action Space
+# 🎯 Problem Statement
 
-| Action         | Description                       |
-| -------------- | --------------------------------- |
-| `retry`        | Retry the same API                |
-| `switch_api`   | Switch to backup API              |
-| `use_cache`    | Use cached response (fast, cheap) |
-| `return_error` | Stop and return failure           |
+Real-world APIs are unreliable due to:
 
----
+* ❌ Failures
+* ⏱️ High latency
+* 💸 Cost constraints
+* ⚡ System load fluctuations
 
-## 🧠 Environment Dynamics
+Traditional systems use fixed rules, which are inefficient.
 
-* API A → cheaper but less reliable
-* API B → more reliable but higher cost
-* Failures persist across steps (**temporal memory**)
-* Repeated retries increase failure probability (**cascading effect**)
-* Actions influence future system behavior
+👉 This project builds a **dynamic decision engine** that adapts in real time.
 
 ---
 
-## 🏆 Reward Function
+# ⚙️ Core Concept
 
-* +10 → successful response
-* −0.01 × latency
-* −scaled retry penalty (non-linear with retries)
-* −3 × api_cost
-* −8 → failure
-* −1 → cache overuse penalty
-* −2 → repeated action penalty
+The system follows a Reinforcement Learning loop:
+
+```text
+State → Action → Reward → Next State
+```
 
 ---
 
-## 🧪 Tasks (Difficulty Levels)
+## 📌 State (Observation)
 
-| Task   | Description                      |
-| ------ | -------------------------------- |
-| Easy   | Low failure probability (~30%)   |
-| Medium | Moderate failures (~50%)         |
-| Hard   | High failure + cascading effects |
+Each API call produces:
 
----
-
-## 🤖 Baseline Agents
-
-| Agent     | Behavior             |
-| --------- | -------------------- |
-| Random    | Random actions       |
-| Bad       | Always retries       |
-| Heuristic | Rule-based decisions |
+* `api_status` → success / failed
+* `latency` → response time
+* `retry_count` → retries attempted
+* `api_cost` → cost incurred
+* `system_load` → low / medium / high
 
 ---
 
-## 📊 Evaluation
+## 🎯 Actions
 
-* Rewards are computed per step
-* Total reward is converted into a **score between 0.0 and 1.0**
-* Score reflects overall performance
+The agent can choose:
+
+| Action         | Description               |
+| -------------- | ------------------------- |
+| `accept`       | Accept current response   |
+| `retry`        | Retry API call            |
+| `switch_api`   | Switch to alternative API |
+| `use_cache`    | Use cached response       |
+| `return_error` | Stop and return failure   |
 
 ---
 
-## 🧪 Inference Script
+## 🏆 Reward System
+
+Each action is evaluated with a reward (0–1):
+
+### ✔️ Positive factors
+
+* successful API call
+* low latency
+* minimal retries
+* low cost
+
+### ❌ Penalties
+
+* excessive retries
+* high latency
+* unnecessary switching
+
+---
+
+# 🧠 Agent Behavior
+
+The system learns decision patterns such as:
+
+```text
+failed + low retries → retry  
+success + low latency → accept  
+too many retries → switch_api  
+high load → use_cache  
+```
+
+👉 It balances performance, cost, and reliability.
+
+---
+
+# 🏗️ Architecture
+
+```text
+Evaluator / User
+        ↓
+Inference Script (Agent)
+        ↓
+API Calls (/reset, /step)
+        ↓
+FastAPI Backend
+        ↓
+Environment Logic
+        ↓
+Reward + Next State
+```
+
+---
+
+# 📂 Project Structure
+
+```
+api-reliability-rl-agent/
+│
+├── inference.py            # Agent logic + evaluation loop
+├── models.py               # Typed models
+├── openenv.yaml            # OpenEnv configuration
+├── pyproject.toml
+├── uv.lock
+├── requirements.txt
+├── Dockerfile
+│
+├── server/
+│   ├── app.py              # FastAPI backend
+│   └── environment.py      # RL environment logic
+│
+└── app.py                  # (Optional) Gradio UI
+```
+
+---
+
+# 🔌 API Endpoints
+
+## 🔹 Health Check
+
+```http
+GET /
+```
+
+Response:
+
+```json
+{"status": "ok"}
+```
+
+---
+
+## 🔹 Reset Environment
+
+```http
+POST /reset
+```
+
+Request:
+
+```json
+{
+  "difficulty": "easy"
+}
+```
+
+👉 Initializes new episode
+👉 Reward = 0 (no action yet)
+
+---
+
+## 🔹 Step (Execute Action)
+
+```http
+POST /step
+```
+
+Request:
+
+```json
+{
+  "action": {
+    "action": "retry"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "observation": {...},
+  "reward": 0.83,
+  "done": false
+}
+```
+
+👉 Applies action and returns reward
+
+---
+
+# ⚠️ Important Clarification
+
+👉 The API **does NOT decide actions**
+
+```text
+/step = executor only
+```
+
+👉 YOU provide action → system evaluates it
+
+---
+
+# 🤖 Viewing Agent Decisions (MOST IMPORTANT)
+
+👉 The actual decision-making happens in:
 
 ```bash
 python inference.py
@@ -111,86 +241,110 @@ python inference.py
 
 ---
 
-## 🌐 API Usage
+## Example Output
 
-### Reset Environment
-
-POST /reset
-
-### Take Action
-
-POST /step
-
-### Get State
-
-GET /state
-
----
-
-## 🤖 AI Integration
-
-The system uses an OpenAI-compatible API to generate **real-time explanations** for decisions, improving interpretability.
-
----
-
-## 🚀 Live Demo
-
-👉 https://rahilahmed1945-api-reliability-rl-env.hf.space
-
----
-
-## 🛠️ Tech Stack
-
-* OpenEnv
-* FastAPI
-* Gradio
-* Docker
-* Hugging Face Spaces
-* OpenAI-compatible API
-
----
-
-## 📦 Local Setup
-
-```bash
-pip install -r requirements.txt
-uvicorn server.app:app --reload
-python app.py
+```
+[START] task=easy env=openenv_api_env
+[STEP] step=1 action=retry reward=0.85 done=false
+[STEP] step=2 action=accept reward=0.92 done=false
+[STEP] step=3 action=accept reward=0.91 done=false
+[END] success=true steps=10 score=0.92
 ```
 
 ---
 
-## 🐳 Docker Setup
+## 🔍 What this means
+
+* `action=...` → decision made by agent
+* `reward=...` → quality of decision
+* `score=...` → average performance
+
+👉 This is what evaluators use.
+
+---
+
+# 🧪 Testing
+
+## Swagger UI
+
+👉 https://rahilahmed1945-api-reliability-rl-agent.hf.space/docs
+
+---
+
+## Testing Flow
+
+```text
+reset → step → step → observe rewards
+```
+
+⚠️ In Swagger:
+
+* YOU choose actions manually
+* System only evaluates
+
+---
+
+# 🌐 Deployment
+
+👉 Live App:
+
+https://rahilahmed1945-api-reliability-rl-agent.hf.space
+
+---
+
+## Ports
+
+* External (HF): 7860
+* Internal (FastAPI): 8000
+
+---
+
+# 🐳 Docker
+
+## Build
 
 ```bash
-docker build -t api-env .
-docker run -p 8000:8000 api-env
+docker build -t api-agent .
+```
+
+## Run
+
+```bash
+docker run -p 8000:8000 api-agent
 ```
 
 ---
 
-## 🧠 OpenEnv Compliance
+# 📊 Performance
 
-* ✅ Typed Action / Observation / State models
-* ✅ step(), reset(), state() implemented
-* ✅ openenv.yaml included
-* ✅ Dockerized deployment
-* ✅ HF Space live
-
----
-
-## 🎯 Key Highlights
-
-* Real-world API reliability simulation
-* State-aware stochastic environment
-* Multi-objective reward optimization
-* LLM-based interpretability
-* Fully deployable RL environment
+| Difficulty | Score |
+| ---------- | ----- |
+| Easy       | ~0.90 |
+| Medium     | ~0.60 |
+| Hard       | ~0.50 |
 
 ---
 
-## 👥 Team
+# 🧠 Key Insights
 
-* PALETI SAI TARUN — [saitarunpaleti@gmail.com](mailto:saitarunpaleti@gmail.com)
-* Rahil Ahmed — [rahilahmed1305@gmail.com](mailto:rahilahmed1305@gmail.com)
-* Ganesh Rayapati — [nehapavanr@gmail.com](mailto:nehapavanr@gmail.com)
+* Not just **what action**, but **when** matters
+* Excess retries reduce reward
+* Efficient decisions yield higher scores
+* System balances reliability vs cost
+
+---
+
+# 🚀 Future Improvements
+
+* 🤖 LLM-based decision reasoning
+* 📊 Visualization dashboard
+* 🧠 Deep RL (DQN, PPO)
+* 🌍 Real API integrations
+
+---
+
+# 🏁 Conclusion
+
+This project demonstrates a **scalable, explainable decision intelligence system** for optimizing API reliability using RL principles.
+
+---

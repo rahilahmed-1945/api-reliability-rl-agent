@@ -1,0 +1,13 @@
+[project]
+name = "api-reliability-rl-agent"
+version = "0.1.0"
+description = "API Reliability RL Environment"
+dependencies = [
+    "openenv-core",
+    "fastapi",
+    "uvicorn",
+    "requests"
+]
+
+[project.scripts]
+server = "server.app:main"

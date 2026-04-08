@@ -28,4 +28,5 @@ class APIState(State):
     current_api: str = "A"
     step_count: int = 0
     retry_count: int = 0
+    total_cost: float = 0.0   # 🔥 ADD THIS
     done: bool = False

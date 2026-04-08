@@ -4,6 +4,7 @@ from typing import Literal, Dict
 import logging
 
 from server.environment import APIEnvironment
+from models import APIAction   # ✅ IMPORTANT FIX
 
 # -----------------------------
 # APP CONFIG
@@ -34,7 +35,7 @@ class ActionRequest(BaseModel):
 
 
 # -----------------------------
-# HEALTH CHECK (IMPORTANT)
+# HEALTH CHECK
 # -----------------------------
 @app.get("/")
 def root():
@@ -65,20 +66,34 @@ def reset(req: ResetRequest):
 
 
 # -----------------------------
-# STEP
+# STEP (🔥 FIXED)
 # -----------------------------
 @app.post("/step")
 def step(req: ActionRequest):
     try:
         logger.info(f"Action received: {req.action}")
 
-        obs = env.step(req.action)
+        # 🔥 FIX: convert dict → APIAction object
+        action_obj = APIAction(**req.action)
+
+        obs = env.step(action_obj)
 
         return {
             "observation": obs.dict(),
-            "reward": obs.reward,   # ✅ already normalized 0–1
+            "reward": obs.reward,
             "done": obs.done
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    # -----------------------------
+# MAIN ENTRYPOINT (🔥 REQUIRED)
+# -----------------------------
+def main():
+    import uvicorn
+    uvicorn.run("server.app:app", host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

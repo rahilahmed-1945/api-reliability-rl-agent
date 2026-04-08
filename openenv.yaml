@@ -3,3 +3,5 @@ version: "1.0.0"
 description: Cost-Aware API Reliability RL Environment
 
 environment: server.environment:APIEnvironment
+
+entrypoint: server.app:app   # 🔥 ADD THIS LINE
