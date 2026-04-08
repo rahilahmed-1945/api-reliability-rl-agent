@@ -16,9 +16,10 @@ class APIEnvironment(Environment):
         self.difficulty = "easy"
         self.last_action = None
 
+    # -----------------------------
+    # RESET
+    # -----------------------------
     def reset(self, seed=None, episode_id=None, difficulty="easy", **kwargs):
-        # ❌ DO NOT FIX RANDOMNESS
-        # Remove seeding completely for real randomness
 
         self.difficulty = difficulty
 
@@ -30,10 +31,12 @@ class APIEnvironment(Environment):
             done=False
         )
 
-        # 🔥 RANDOMIZE EVERY RESET
+        # Track total cost for scoring
+        self._state.total_cost = 0.0
+
+        # Randomize load
         self.system_load = random.choice(["low", "medium", "high"])
 
-        # 🔥 simulate AFTER setting load
         status, latency, cost = self.simulate_api()
 
         self.current_status = status
@@ -42,16 +45,20 @@ class APIEnvironment(Environment):
 
         return APIObservation(
             done=False,
-            reward=None,
+            reward=0.0,
             api_status=self.current_status,
             latency=self.latency,
             retry_count=self._state.retry_count,
             api_cost=self.cost,
             system_load=self.system_load,
-            message="Environment reset"
+            message=f"Task: {self.difficulty} | Environment reset"
         )
 
+    # -----------------------------
+    # SIMULATION
+    # -----------------------------
     def simulate_api(self):
+
         if self.difficulty == "easy":
             fail_prob = 0.3
         elif self.difficulty == "medium":
@@ -71,14 +78,41 @@ class APIEnvironment(Environment):
 
         rand = random.random()
 
+        # API latency difference
+        if self._state.current_api == "A":
+            latency_range = (150, 400)
+        else:
+            latency_range = (50, 200)
+
         if rand < fail_prob:
-            return "failed", random.uniform(300, 800), random.uniform(0.01, 0.1)
+            return "failed", random.uniform(*latency_range), random.uniform(0.01, 0.1)
         elif rand < fail_prob + 0.1:
             return "slow", random.uniform(200, 500), random.uniform(0.01, 0.1)
         else:
             return "success", random.uniform(50, 200), random.uniform(0.01, 0.1)
 
+    # -----------------------------
+    # TASK SCORING (0 → 1)
+    # -----------------------------
+    def compute_task_score(self):
+
+        # Lower retries + cost + latency = better score
+        score = 1.0
+
+        score -= 0.1 * self._state.retry_count
+        score -= 0.05 * self._state.total_cost
+        score -= 0.001 * self.latency
+
+        if self.current_status != "success":
+            score -= 0.3
+
+        return max(min(score, 1.0), 0.0)
+
+    # -----------------------------
+    # STEP
+    # -----------------------------
     def step(self, action: APIAction, timeout_s=None, **kwargs):
+
         self._state.step_count += 1
 
         prev_status = self.current_status
@@ -99,7 +133,8 @@ class APIEnvironment(Environment):
             self.current_status, self.latency, self.cost = self.simulate_api()
 
         elif action.action == "use_cache":
-            self.current_status = "success" if random.random() < 0.8 else "failed"
+            success_prob = 0.9 if self.system_load != "high" else 0.6
+            self.current_status = "success" if random.random() < success_prob else "failed"
             self.latency = random.uniform(10, 50)
             self.cost = 0.0
 
@@ -111,19 +146,17 @@ class APIEnvironment(Environment):
         else:
             self.current_status, self.latency, self.cost = self.simulate_api()
 
-        # ---------------- REWARD ----------------
+        # Track total cost
+        self._state.total_cost += self.cost
+
+        # ---------------- REWARD (RAW) ----------------
         reward = 0
 
-        if self.current_status == "success":
-            reward += 8
-        else:
-            reward -= 8
-
+        reward += 8 if self.current_status == "success" else -8
         reward -= 0.02 * self.latency
         reward -= 5 * self.cost
         reward -= 2 * self._state.retry_count
 
-        # 🔥 Decision quality
         if prev_status == "success" and prev_latency < 120:
             reward += 5 if action.action == "accept" else -5
 
@@ -134,25 +167,35 @@ class APIEnvironment(Environment):
             reward += 3 if action.action in ["use_cache", "switch_api"] else -2
 
         if self.last_action == action.action:
-            reward -= 2
+            reward -= 3
+
+        if self.current_status == "success" and self.latency < 80 and self.cost < 0.02:
+            reward += 3
+
+        # Normalize reward to 0–1
+        reward = max(min((reward + 10) / 20, 1), 0)
 
         self.last_action = action.action
 
-        done = self._state.step_count >= 5 or self._state.retry_count >= 5
+        # ---------------- DONE ----------------
+        done = self._state.step_count >= 10 or self._state.retry_count >= 5
+
+        # ---------------- TASK SCORE ----------------
+        score = self.compute_task_score()
 
         return APIObservation(
             done=done,
-            reward=reward,
+            reward=score,  # ✅ FINAL SCORE (0–1)
             api_status=self.current_status,
             latency=self.latency,
             retry_count=self._state.retry_count,
             api_cost=self.cost,
             system_load=self.system_load,
-            message=f"Action taken: {action.action}"
+            message=f"Task: {self.difficulty} | Score: {round(score, 2)} | Action: {action.action}"
         )
 
     # -----------------------------
-    # ✅ REQUIRED FOR OPENENV
+    # STATE (REQUIRED)
     # -----------------------------
     @property
     def state(self):
