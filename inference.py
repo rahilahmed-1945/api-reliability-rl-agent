@@ -1,52 +1,71 @@
 import requests
 import time
 import os
+import random
+from typing import List
+
 from openai import OpenAI
 
 # -----------------------------
-# CONFIG
+# CONFIG (MANDATORY)
 # -----------------------------
 BASE_URL = os.getenv("BASE_URL", "http://0.0.0.0:8000")
 
-client = OpenAI(
-    api_key=os.getenv("HF_TOKEN", "dummy"),
-    base_url=os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-)
-
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
+API_KEY = os.getenv("HF_TOKEN", "dummy")
+
+TASK_NAME = "api_reliability"
+BENCHMARK = "openenv_api_env"
+
+MAX_STEPS = 10
+
+client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+
+# ✅ reproducibility
+random.seed(42)
 
 
 # -----------------------------
-# RESET ENV
+# LOGGING (STRICT FORMAT)
 # -----------------------------
-def reset_env(difficulty="easy"):
+def log_start(task: str, env: str, model: str):
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: str):
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]):
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
+        flush=True,
+    )
+
+
+# -----------------------------
+# ENV CALLS
+# -----------------------------
+def reset_env(difficulty):
     return requests.post(f"{BASE_URL}/reset", json={"difficulty": difficulty}).json()
 
 
-# -----------------------------
-# STEP ENV
-# -----------------------------
 def step_env(action):
-    payload = {"action": {"action": action}}
-    return requests.post(f"{BASE_URL}/step", json=payload).json()
+    return requests.post(
+        f"{BASE_URL}/step",
+        json={"action": {"action": action}}
+    ).json()
 
 
 # -----------------------------
-# SCORE FUNCTION
+# BASELINE AGENT (SIMPLE)
 # -----------------------------
-def compute_score(total_reward):
-    if total_reward >= 30:
-        return 1.0
-    elif total_reward >= 0:
-        return 0.5
-    else:
-        return 0.0
-
-
-# -----------------------------
-# 🧠 RULE-BASED SMART AGENT
-# -----------------------------
-def rule_based_agent(obs):
+def agent(obs):
     o = obs["observation"]
 
     status = o["api_status"]
@@ -54,128 +73,68 @@ def rule_based_agent(obs):
     retries = o["retry_count"]
     load = o["system_load"]
 
-    # ✅ PERFECT CASE → ACCEPT
-    if status == "success" and latency < 100 and load in ["low", "medium"]:
+    if status == "success" and latency < 120:
         return "accept"
 
-    # ⚠️ SLOW BUT WORKING → CACHE
-    if status == "success" and latency >= 100:
-        return "use_cache"
-
-    # ❌ FAILURE → RETRY FIRST
     if status == "failed":
-        if retries < 2:
-            return "retry"
-        else:
-            return "switch_api"
+        return "retry" if retries < 2 else "switch_api"
 
-    # 🔥 HIGH LOAD → CACHE
-    if load == "high":
+    if latency > 150 or load == "high":
         return "use_cache"
 
-    # Fallback
     return "retry"
-
-
-# -----------------------------
-# 🤖 OPTIONAL LLM (fallback only)
-# -----------------------------
-def llm_agent(obs):
-    o = obs["observation"]
-
-    prompt = f"""
-You are an API reliability agent.
-
-State:
-- status: {o['api_status']}
-- latency: {o['latency']}
-- retries: {o['retry_count']}
-- load: {o['system_load']}
-
-Choose ONE action:
-accept, retry, switch_api, use_cache, return_error
-
-Only output the action.
-"""
-
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=5
-        )
-
-        action = response.choices[0].message.content.strip().lower()
-
-        if action in ["accept", "retry", "switch_api", "use_cache", "return_error"]:
-            return action
-
-    except:
-        pass
-
-    return "retry"
-
-
-# -----------------------------
-# 🔥 FINAL AGENT (HYBRID)
-# -----------------------------
-def agent(obs):
-    # 90% rule-based (reliable)
-    action = rule_based_agent(obs)
-
-    return action
 
 
 # -----------------------------
 # RUN EPISODE
 # -----------------------------
-def run_episode(difficulty="easy"):
-    print(f"[START] task={difficulty} env=api_env model={MODEL_NAME}")
+def run_episode(difficulty):
 
-    obs = reset_env(difficulty)
-    total_reward = 0
-    rewards_list = []
-    step_count = 0
-    done = False
+    log_start(task=difficulty, env=BENCHMARK, model=MODEL_NAME)
 
-    MAX_STEPS = 10
+    rewards = []
+    steps_taken = 0
+    success = False
 
-    while step_count < MAX_STEPS:
-        step_count += 1
+    try:
+        obs = reset_env(difficulty)
 
-        try:
+        for step in range(1, MAX_STEPS + 1):
+
             action = agent(obs)
 
-            result = step_env(action)
+            try:
+                result = step_env(action)
 
-            reward = result["reward"]
-            done = result["done"]
+                reward = result["reward"]
+                done = result["done"]
+                error = "null"
 
-            total_reward += reward
-            rewards_list.append(round(reward, 2))
+            except Exception as e:
+                reward = 0.0
+                done = True
+                error = str(e)
 
-            print(f"[STEP] step={step_count} action={action} reward={round(reward,2)} done={str(done).lower()} error=null")
+            rewards.append(reward)
+            steps_taken = step
+
+            log_step(step, action, reward, done, error)
 
             if done:
                 success = result["observation"]["api_status"] == "success"
                 break
 
             obs = result
+            time.sleep(0.05)
 
-        except Exception as e:
-            print(f"[STEP] step={step_count} action=error reward=0.00 done=true error={str(e)}")
-            success = False
-            break
+    except Exception as e:
+        print(f"[STEP] step=0 action=error reward=0.00 done=true error={str(e)}")
 
-        time.sleep(0.1)
+    # ✅ FINAL SCORE (0–1)
+    score = sum(rewards) / len(rewards) if rewards else 0.0
+    score = max(min(score, 1.0), 0.0)
 
-    if not done:
-        success = False
-
-    score = compute_score(total_reward)
-    rewards_str = ",".join([f"{r:.2f}" for r in rewards_list])
-
-    print(f"[END] success={str(success).lower()} steps={step_count} score={score:.2f} rewards={rewards_str}")
+    log_end(success, steps_taken, score, rewards)
 
 
 # -----------------------------
