@@ -15,6 +15,8 @@ alpha = 0.1
 gamma = 0.9
 epsilon = 0.6
 
+current_obs = None   # ✅ FIX: persistent state
+
 
 # -----------------------------
 # ENV
@@ -56,8 +58,6 @@ def agent(obs):
 # UPDATE
 # -----------------------------
 def update_q(obs, action, reward, next_obs):
-    reward = max(min(reward, 10), -10)
-
     s = get_state(obs)
     ns = get_state(next_obs)
 
@@ -72,47 +72,51 @@ def update_q(obs, action, reward, next_obs):
 
 
 # -----------------------------
-# LABEL
+# LABEL (UPDATED FOR 0–1 REWARD)
 # -----------------------------
 def get_label(reward):
-    if reward >= 8:
+    if reward >= 0.8:
         return "GOOD"
-    elif reward >= 1:
+    elif reward >= 0.4:
         return "OKAY"
     else:
         return "BAD"
 
 
 def compute_score(reward):
-    return 1 if reward >= 8 else (0.5 if reward >= 1 else 0)
+    return round(reward, 2)
 
 
 # -----------------------------
-# MAIN (🔥 FAST RL + SUGGESTION)
+# MAIN
 # -----------------------------
 def run_step(difficulty):
 
-    # reset env
-    obs = reset_env(difficulty)["observation"]
+    global current_obs
 
-    # 🔥 suggested best action
+    # ✅ Only reset once
+    if current_obs is None:
+        current_obs = reset_env(difficulty)["observation"]
+
+    obs = current_obs
+
+    # suggested action
     state = get_state(obs)
+    best_action = max(Q[state], key=Q[state].get) if state in Q else "exploring"
 
-    if state in Q:
-        best_action = max(Q[state], key=Q[state].get)
-    else:
-        best_action = "exploring"
-
-    # 🔥 agent action
+    # agent action
     action = agent(obs)
 
-    # take step
+    # step
     res = step_env(action)
     next_obs = res["observation"]
     reward = res["reward"]
 
-    # update learning
+    # update Q
     update_q(obs, action, reward, next_obs)
+
+    # update state
+    current_obs = next_obs
 
     label = get_label(reward)
 
@@ -127,7 +131,7 @@ def run_step(difficulty):
         round(reward, 2),
         compute_score(reward),
         f"{label} - Agent decision",
-        True,
+        next_obs["done"],
         len(Q)
     )
 
