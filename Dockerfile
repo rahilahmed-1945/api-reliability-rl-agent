@@ -9,4 +9,4 @@ RUN pip install openenv-core fastapi uvicorn gradio requests
 
 EXPOSE 8000
 
-CMD ["python", "-m", "openenv.core.env_server", "server.environment:APIEnvironment"]
+CMD ["uvicorn", "openenv.core.env_server:app", "--host", "0.0.0.0", "--port", "8000"]
