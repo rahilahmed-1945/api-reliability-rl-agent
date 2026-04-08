@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Literal, Dict
+from typing import Literal, Dict, Optional
 import logging
 
 from server.environment import APIEnvironment
-from models import APIAction   # ✅ IMPORTANT FIX
+from models import APIAction
 
 # -----------------------------
 # APP CONFIG
@@ -48,14 +48,17 @@ def health():
 
 
 # -----------------------------
-# RESET
+# RESET (✅ FIXED)
 # -----------------------------
 @app.post("/reset")
-def reset(req: ResetRequest):
+def reset(req: Optional[ResetRequest] = None):
     try:
-        logger.info(f"Reset called: difficulty={req.difficulty}")
+        # ✅ Handle missing body
+        difficulty = req.difficulty if req else "easy"
 
-        obs = env.reset(difficulty=req.difficulty)
+        logger.info(f"Reset called: difficulty={difficulty}")
+
+        obs = env.reset(difficulty=difficulty)
 
         return {
             "observation": obs.dict()
@@ -66,15 +69,21 @@ def reset(req: ResetRequest):
 
 
 # -----------------------------
-# STEP (🔥 FIXED)
+# STEP (✅ FIXED)
 # -----------------------------
 @app.post("/step")
-def step(req: ActionRequest):
+def step(req: Optional[ActionRequest] = None):
     try:
-        logger.info(f"Action received: {req.action}")
+        # ✅ Default action if no body
+        action_str = "retry"
 
-        # 🔥 FIX: convert dict → APIAction object
-        action_obj = APIAction(**req.action)
+        if req and req.action and "action" in req.action:
+            action_str = req.action["action"]
+
+        logger.info(f"Action received: {action_str}")
+
+        # Convert to APIAction object
+        action_obj = APIAction(action=action_str)
 
         obs = env.step(action_obj)
 
@@ -86,9 +95,10 @@ def step(req: ActionRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-    # -----------------------------
-# MAIN ENTRYPOINT (🔥 REQUIRED)
+
+
+# -----------------------------
+# MAIN ENTRYPOINT (REQUIRED)
 # -----------------------------
 def main():
     import uvicorn
